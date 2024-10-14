@@ -1,0 +1,566 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>奔跑小人游戏</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            background-color: #87CEEB;
+            font-family: Arial, sans-serif;
+            overflow: hidden;
+        }
+        .game-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px;
+            background-color: rgba(0, 0, 0, 0.5);
+        }
+        .game-container {
+            flex-grow: 1;
+            position: relative;
+            background-image: url('img/cd.png');
+            background-repeat: repeat-x;
+            background-size: auto 100%;
+            overflow: hidden;
+        }
+        .runner {
+            width: 10vw;
+            height: 10vw;
+            max-width: 50px;
+            max-height: 50px;
+            background-image: url('img/rw.png');
+            background-size: contain;
+            background-repeat: no-repeat;
+            position: absolute;
+            bottom: 0;
+            left: 10vw;
+            z-index: 10;
+        }
+        .obstacle {
+            width: 6vw;
+            height: 6vw;
+            max-width: 30px;
+            max-height: 30px;
+            background-image: url('img/b.png');
+            background-size: contain;
+            background-repeat: no-repeat;
+            position: absolute;
+            bottom: 0;
+        }
+        .reward {
+            width: 4vw;
+            height: 4vw;
+            max-width: 20px;
+            max-height: 20px;
+            background-image: url('img/hb.png');
+            background-size: contain;
+            background-repeat: no-repeat;
+            position: absolute;
+        }
+        #controls button {
+            font-size: 16px;
+            padding: 5px 10px;
+            margin-right: 5px;
+        }
+        #score, #lives, #level {
+            color: white;
+            font-size: 18px;
+            text-shadow: 1px 1px 2px black;
+        }
+        #mobile-controls {
+            display: none;
+            position: absolute;
+            bottom: 10px;
+            left: 0;
+            right: 0;
+            justify-content: space-around;
+        }
+        #mobile-controls button {
+            font-size: 24px;
+            padding: 10px 20px;
+        }
+        @media (max-width: 768px) {
+            .game-header {
+                flex-wrap: wrap;
+            }
+            #controls {
+                width: 100%;
+                margin-bottom: 10px;
+            }
+            #mobile-controls {
+                display: flex;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="game-header">
+        <div id="controls">
+            <button id="startBtn">开始</button>
+            <button id="stopBtn">停止</button>
+            <button id="pauseBtn">暂停</button>
+        </div>
+        <div id="level">等级: 1</div>
+        <div id="lives">生命: 3</div>
+        <div id="score">得分: 0</div>
+    </div>
+    <div class="game-container">
+        <div class="runner"></div>
+    </div>
+    <div id="mobile-controls">
+        <button id="leftBtn">左</button>
+        <button id="jumpBtn">跳</button>
+        <button id="rightBtn">右</button>
+    </div>
+
+    <script>
+        const gameContainer = document.querySelector('.game-container');
+        const runner = document.querySelector('.runner');
+        const startBtn = document.getElementById('startBtn');
+        const stopBtn = document.getElementById('stopBtn');
+        const pauseBtn = document.getElementById('pauseBtn');
+        const scoreElement = document.getElementById('score');
+        const livesElement = document.getElementById('lives');
+        const levelElement = document.getElementById('level');
+
+        let runnerX = 50;
+        let runnerY = 0;
+        let speed = 5;
+        let isRunning = false;
+        let isPaused = false;
+        let animationId;
+        let obstacles = [];
+        let rewards = [];
+        let score = 0;
+        let lives = 3;
+        let level = 1;
+        let isJumping = false;
+        let obstacleInterval = 2000;
+        let rewardInterval = 3000;
+        let obstacleCreator;
+        let rewardCreator;
+        let moveLeft = false;
+        let moveRight = false;
+        let gameLoop;
+        let isInvincible = false;
+
+        // 替换原来的 loveMessages 数组
+        const storyMessages = [
+            "在这个奇妙的游戏世界里，",
+            "有一个特别的你在等待，",
+            "每一次跳跃，每一次闪避，",
+            "都是为了离你更近一步，",
+            "穿过重重障碍，",
+            "收集散落的心意，",
+            "我们的故事正在书写，",
+            "每一个奖励都是一个章节，",
+            "记录着我们共同的冒险，",
+            "你的笑容是最珍贵的宝藏，",
+            "我愿意用尽全力去守护，",
+            "在这个虚拟的世界里，",
+            "我们的感情却是真实的，",
+            "让我们一起闯关、成长，",
+            "创造属于我们的传奇，",
+            "无论游戏如何变幻，",
+            "我对你的心意永不改变，",
+            "感谢你成为我生命中的玩家二号，",
+            "让我们一起，走到故事的最后。"
+        ];
+
+        let currentMessageIndex = 0;
+
+        function getNextMessage() {
+            const message = storyMessages[currentMessageIndex];
+            currentMessageIndex = (currentMessageIndex + 1) % storyMessages.length;
+            return message;
+        }
+0
+        function collectReward(reward, index) {
+            gameContainer.removeChild(reward);
+            rewards.splice(index, 1);
+            score += 10;
+            updateScore();
+            
+            const nextMessage = getNextMessage();
+            
+            // 创建一个元素来显示消息
+            const messageElement = document.createElement('div');
+            messageElement.textContent = nextMessage;
+            messageElement.style.position = 'absolute';
+            messageElement.style.left = '50%';
+            messageElement.style.top = '20%';
+            messageElement.style.transform = 'translateX(-50%)';
+            messageElement.style.color = 'red';
+            messageElement.style.fontSize = '24px';
+            messageElement.style.fontWeight = 'bold';
+            messageElement.style.textShadow = '2px 2px 4px white';
+            messageElement.style.transition = 'opacity 2s, transform 2s';
+            messageElement.style.opacity = '0';
+            messageElement.style.zIndex = '1000';
+            messageElement.style.textAlign = 'center';
+            messageElement.style.width = '80%'; // 设置宽度以确保长句子能够正确换行
+            
+            gameContainer.appendChild(messageElement);
+            
+            // 淡入和上浮效果
+            setTimeout(() => {
+                messageElement.style.opacity = '1';
+                messageElement.style.transform = 'translateX(-50%) translateY(-20px)';
+            }, 100);
+            
+            // 淡出效果
+            setTimeout(() => {
+                messageElement.style.opacity = '0';
+                messageElement.style.transform = 'translateX(-50%) translateY(-40px)';
+            }, 3000);
+            
+            // 移除元素
+            setTimeout(() => {
+                gameContainer.removeChild(messageElement);
+            }, 5000);
+            
+            console.log('Reward collected! Score:', score);
+        }
+
+        function animate() {
+            if (!isPaused && isRunning) {
+                // 根据按键状态移动小人
+                if (moveLeft) {
+                    runnerX = Math.max(0, runnerX - 5);
+                }
+                if (moveRight) {
+                    runnerX = Math.min(gameContainer.offsetWidth - 50, runnerX + 5);
+                }
+
+                runner.style.left = runnerX + 'px';
+                runner.style.bottom = runnerY + 'px';
+
+                console.log('Animating:', runnerX, runnerY); // 添加日志
+
+                // 移动障碍物和奖励
+                moveObstacles();
+                moveRewards();
+
+                // 检测碰撞
+                checkCollisions();
+            }
+        }
+
+        function moveObstacles() {
+            obstacles.forEach((obstacle, index) => {
+                const obstacleX = parseFloat(obstacle.style.left) - speed;
+                obstacle.style.left = obstacleX + 'px';
+                if (obstacleX < -30) {
+                    gameContainer.removeChild(obstacle);
+                    obstacles.splice(index, 1);
+                }
+            });
+        }
+
+        function moveRewards() {
+            rewards.forEach((reward, index) => {
+                const rewardX = parseFloat(reward.style.left) - speed;
+                reward.style.left = rewardX + 'px';
+                if (rewardX < -20) {
+                    gameContainer.removeChild(reward);
+                    rewards.splice(index, 1);
+                }
+            });
+        }
+
+        function checkCollisions() {
+            if (isInvincible) return; // 如果处于无敌状态，跳过碰撞检测
+
+            const runnerRect = runner.getBoundingClientRect();
+
+            obstacles.forEach((obstacle, index) => {
+                const obstacleRect = obstacle.getBoundingClientRect();
+                if (runnerRect.right > obstacleRect.left &&
+                    runnerRect.left < obstacleRect.right &&
+                    runnerRect.bottom > obstacleRect.top) {
+                    console.log('Collision detected!');
+                    hitObstacle();
+                }
+            });
+
+            rewards.forEach((reward, index) => {
+                const rewardRect = reward.getBoundingClientRect();
+                if (runnerRect.right > rewardRect.left &&
+                    runnerRect.left < rewardRect.right &&
+                    runnerRect.top < rewardRect.bottom &&
+                    runnerRect.bottom > rewardRect.top) {
+                    collectReward(reward, index);
+                }
+            });
+        }
+
+        function hitObstacle() {
+            console.log('Hit obstacle. Lives before:', lives);
+            lives--;
+            console.log('Lives after:', lives);
+            updateLives();
+            if (lives <= 0) {
+                console.log('Game over called from hitObstacle');
+                gameOver();
+            } else {
+                console.log('Applying invincibility');
+                // 短暂无敌时间
+                isInvincible = true;
+                runner.style.opacity = '0.5';
+                setTimeout(() => {
+                    isInvincible = false;
+                    runner.style.opacity = '1';
+                    console.log('Invincibility ended');
+                }, 2000); // 增加无敌时间到2秒
+            }
+        }
+
+        function gameOver() {
+            console.log('Game over function called');
+            isRunning = false;
+            clearInterval(gameLoop);
+            clearInterval(obstacleCreator);
+            clearInterval(rewardCreator);
+            
+            const restartGame = confirm(`游戏结束！您的得分是: ${score}\n是否要重新开始游戏？`);
+            
+            if (restartGame) {
+                resetGame();
+                startGame();
+            }
+        }
+
+        function resetGame() {
+            console.log('Resetting game');
+            runnerX = 50;
+            runnerY = 0;
+            speed = 5;
+            score = 0;
+            lives = 3;
+            level = 1;
+            isJumping = false;
+            isInvincible = false;
+            moveLeft = false;
+            moveRight = false;
+            
+            obstacles.forEach(obstacle => gameContainer.removeChild(obstacle));
+            rewards.forEach(reward => gameContainer.removeChild(reward));
+            obstacles = [];
+            rewards = [];
+            
+            runner.style.left = runnerX + 'px';
+            runner.style.bottom = runnerY + 'px';
+            runner.style.opacity = '1';
+            
+            updateScore();
+            updateLives();
+            updateLevel();
+            // ... 其他重置代码 ...
+            currentMessageIndex = 0;
+            // ... 其他重置代码 ...
+        }
+
+        function startGame() {
+            console.log('Starting game. Lives:', lives);
+            isRunning = true;
+            isPaused = false;
+            
+            // 启动游戏循环
+            gameLoop = setInterval(animate, 1000 / 60); // 60 FPS
+            
+            // 创建障碍物和奖励
+            obstacleCreator = setInterval(createObstacle, obstacleInterval);
+            rewardCreator = setInterval(createReward, rewardInterval);
+            
+            // 增加难度
+            setInterval(increaseDifficulty, 30000); // 每30秒增加一次难度
+        }
+
+        function createObstacle() {
+            const obstacle = document.createElement('div');
+            obstacle.classList.add('obstacle');
+            obstacle.style.left = gameContainer.offsetWidth + 'px';
+            gameContainer.appendChild(obstacle);
+            obstacles.push(obstacle);
+        }
+
+        function createReward() {
+            const reward = document.createElement('div');
+            reward.classList.add('reward');
+            reward.style.left = gameContainer.offsetWidth + 'px';
+            
+            // 调整奖励的高度范围
+            const maxJumpHeight = 100; // 与跳跃高度相同
+            reward.style.bottom = `${Math.random() * maxJumpHeight}px`;
+            
+            gameContainer.appendChild(reward);
+            rewards.push(reward);
+        }
+
+        function updateScore() {
+            scoreElement.textContent = `得分: ${score}`;
+        }
+
+        function updateLives() {
+            livesElement.textContent = `生命: ${lives}`;
+            console.log('Lives updated:', lives);
+        }
+
+        function updateLevel() {
+            levelElement.textContent = `等级: ${level}`;
+        }
+
+        function increaseDifficulty() {
+            level++;
+            updateLevel();
+            speed += 1;
+            obstacleInterval = Math.max(obstacleInterval - 100, 1000);
+            rewardInterval = Math.max(rewardInterval - 100, 1500);
+            
+            clearInterval(obstacleCreator);
+            clearInterval(rewardCreator);
+            obstacleCreator = setInterval(createObstacle, obstacleInterval);
+            rewardCreator = setInterval(createReward, rewardInterval);
+        }
+
+        function jump() {
+            if (!isJumping) {
+                isJumping = true;
+                let jumpHeight = 100;
+                let jumpDuration = 500;
+                let startTime = Date.now();
+
+                function jumpAnimation() {
+                    let elapsedTime = Date.now() - startTime;
+                    let progress = elapsedTime / jumpDuration;
+
+                    if (progress < 1) {
+                        runnerY = Math.sin(progress * Math.PI) * jumpHeight;
+                        requestAnimationFrame(jumpAnimation);
+                    } else {
+                        runnerY = 0;
+                        isJumping = false;
+                    }
+                    runner.style.bottom = runnerY + 'px';
+                    
+                    // 在跳跃过程中持续检查碰撞
+                    checkCollisions();
+                }
+
+                requestAnimationFrame(jumpAnimation);
+            }
+        }
+
+        startBtn.addEventListener('click', () => {
+            if (!isRunning) {
+                console.log('Start button clicked');
+                resetGame();
+                startGame();
+            }
+        });
+
+        stopBtn.addEventListener('click', () => {
+            isRunning = false;
+            clearInterval(gameLoop);
+            clearInterval(obstacleCreator);
+            clearInterval(rewardCreator);
+            resetGame();
+        });
+
+        pauseBtn.addEventListener('click', () => {
+            isPaused = !isPaused;
+            pauseBtn.textContent = isPaused ? '继续' : '暂停';
+        });
+
+        // 键盘控制
+        document.addEventListener('keydown', (event) => {
+            if (isRunning && !isPaused) {
+                switch (event.key) {
+                    case 'ArrowRight':
+                        moveRight = true;
+                        console.log('Right key pressed');
+                        break;
+                    case 'ArrowLeft':
+                        moveLeft = true;
+                        console.log('Left key pressed');
+                        break;
+                    case 'ArrowUp':
+                    case ' ':
+                        jump();
+                        console.log('Jump key pressed');
+                        break;
+                }
+            }
+        });
+
+        document.addEventListener('keyup', (event) => {
+            switch (event.key) {
+                case 'ArrowRight':
+                    moveRight = false;
+                    console.log('Right key released');
+                    break;
+                case 'ArrowLeft':
+                    moveLeft = false;
+                    console.log('Left key released');
+                    break;
+            }
+        });
+
+        // 初始化显示
+        updateScore();
+        updateLives();
+        updateLevel();
+
+        // 添加移动设备触摸控制
+        const leftBtn = document.getElementById('leftBtn');
+        const jumpBtn = document.getElementById('jumpBtn');
+        const rightBtn = document.getElementById('rightBtn');
+
+        leftBtn.addEventListener('touchstart', () => { moveLeft = true; });
+        leftBtn.addEventListener('touchend', () => { moveLeft = false; });
+        rightBtn.addEventListener('touchstart', () => { moveRight = true; });
+        rightBtn.addEventListener('touchend', () => { moveRight = false; });
+        jumpBtn.addEventListener('touchstart', jump);
+
+        // 防止移动设备上的滚动和缩放
+        document.body.addEventListener('touchmove', function(e) {
+            e.preventDefault();
+        }, { passive: false });
+
+        // 检测设备类型并调整布局
+        function detectDeviceAndAdjust() {
+            const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+            const gameHeader = document.querySelector('.game-header');
+            const mobileControls = document.getElementById('mobile-controls');
+            const gameContainer = document.querySelector('.game-container');
+
+            if (isMobile) {
+                // 移动设备布局
+                gameHeader.style.flexDirection = 'column';
+                gameHeader.style.alignItems = 'center';
+                mobileControls.style.display = 'flex';
+                gameContainer.style.height = 'calc(100vh - 150px)'; // 调整游戏容器高度
+            } else {
+                // 桌面设备布局
+                gameHeader.style.flexDirection = 'row';
+                gameHeader.style.justifyContent = 'space-between';
+                mobileControls.style.display = 'none';
+                gameContainer.style.height = 'calc(100vh - 60px)'; // 调整游戏容器高度
+            }
+        }
+
+        // 页面加载完成后执行检测和调整
+        window.addEventListener('load', detectDeviceAndAdjust);
+
+        // 窗口大小改变时重新检测和调整
+        window.addEventListener('resize', detectDeviceAndAdjust);
+    </script>
+</body>
+</html>
